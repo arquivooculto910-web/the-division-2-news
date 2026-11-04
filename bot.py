@@ -110,29 +110,28 @@ def publicar(noticia):
 
 
 def main():
-    print("Testando acesso ao Discord...")
+    print("Testando envio de mensagem no Discord...")
 
-    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}"
+    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
 
-    resposta = requests.get(
+    dados = {
+        "content": "🦉 **THE DIVISION 2 NEWS** está conectado! Teste de envio realizado com sucesso."
+    }
+
+    resposta = requests.post(
         url,
         headers=DISCORD_HEADERS,
+        json=dados,
         timeout=20
     )
 
     print("Código de resposta:", resposta.status_code)
 
     if resposta.status_code == 200:
-        canal = resposta.json()
-        print("ACESSO CONFIRMADO!")
-        print("Nome do canal:", canal.get("name"))
-        print("ID do canal:", canal.get("id"))
+        print("SUCESSO! Mensagem enviada ao Discord.")
 
-    elif resposta.status_code == 401:
-        print("ERRO: token do bot não foi aceito.")
-
-    elif resposta.status_code == 404:
-        print("ERRO: canal não encontrado ou inacessível ao bot.")
+    elif resposta.status_code == 403:
+        print("ERRO: o bot não tem permissão para enviar mensagens.")
 
     else:
         print("Resposta do Discord:", resposta.text[:500])
