@@ -108,42 +108,39 @@ def publicar(noticia):
     resposta.raise_for_status()
     print("Notícia publicada:", noticia["title"])
 
+
 def main():
-    pt = buscar_noticias(BASE_URLS[0])
-    en = buscar_noticias(BASE_URLS[1])
+    print("Testando acesso ao Discord...")
 
-    ingles_por_url = {n["url"]: n for n in en}
-    noticias = []
+    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}"
 
-    # Prioriza a página em português.
-    for noticia in pt:
-        noticias.append(noticia)
+    resposta = requests.get(
+        url,
+        headers=DISCORD_HEADERS,
+        timeout=20
+    )
 
-    # Usa notícias em inglês que não aparecem na página portuguesa.
-    urls_pt = {n["url"] for n in pt}
-    for noticia in en:
-        if noticia["url"] not in urls_pt:
-            noticias.append(noticia)
+    print("Código de resposta:", resposta.status_code)
 
-    print("Notícias encontradas:", len(noticias))
-    print("VERSÃO NOVA DO BOT EXECUTADA")
+    if resposta.status_code == 200:
+        canal = resposta.json()
+        print("ACESSO CONFIRMADO!")
+        print("Nome do canal:", canal.get("name"))
+        print("ID do canal:", canal.get("id"))
 
-    # Processa primeiro as publicações mais recentes da página.
-    for item in noticias[:15]:
-        try:
-            detalhe = detalhes_noticia(item["url"], item["titulo"])
+    elif resposta.status_code == 401:
+        print("ERRO: token do bot não foi aceito.")
 
-            if ja_publicada(detalhe["url"]):
-                print("Já publicada:", detalhe["title"])
-                continue
+    elif resposta.status_code == 404:
+        print("ERRO: canal não encontrado ou inacessível ao bot.")
 
-            publicar(detalhe)
-            break
+    else:
+        print("Resposta do Discord:", resposta.text[:500])
 
-        except Exception as erro:
-            print("Erro ao processar notícia:", erro)
 
-    print("Verificação concluída.")
+if __name__ == "__main__":
+    main()
+
 
 if __name__ == "__main__":
     main()
