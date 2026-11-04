@@ -1,144 +1,180 @@
 
 import os
+import re
+import json
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 
-TOKEN = os.environ["DISCORD_TOKEN"]
-CHANNEL_ID = os.environ["DISCORD_CHANNEL_ID"]
+TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 
 BASE_URLS = [
     "https://www.ubisoft.com/pt-br/game/the-division/the-division-2/news-updates",
     "https://www.ubisoft.com/en-us/game/the-division/the-division-2/news-updates",
 ]
 
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; Division2NewsBot/1.0)"
+}
+
 DISCORD_HEADERS = {
     "Authorization": f"Bot {TOKEN}",
     "Content-Type": "application/json"
 }
 
-def buscar_noticias(url):
-    resposta = requests.get(url, headers=HEADERS, timeout=30)
-    resposta.raise_for_status()
-    soup = BeautifulSoup(resposta.text, "html.parser")
+API = "https://discord.com/api/v10"
 
+
+def buscar_noticias():
     noticias = []
-    base = url.rstrip("/") + "/"
 
-    for link in soup.find_all("a", href=True):
-        href = urljoin(base, link["href"])
-        if "/news-updates/" not in href:
-            continue
+    for pagina in BASE_URLS:
+        try:
+            resposta = requests.get(
+                pagina,
+                headers=HEADERS,
+                timeout=30
+            )
+            resposta.raise_for_status()
 
-        partes = href.rstrip("/").split("/")
-        if len(partes) < 2:
-            continue
+            soup = BeautifulSoup(resposta.text, "html.parser")
 
-        titulo = link.get_text(" ", strip=True)
-        if not titulo or titulo.lower() in ("leia mais", "read more"):
-            titulo = ""
+            for link in soup.find_all("a", href=True):
+                href = link["href"]
+                titulo = link.get_text(" ", strip=True)
 
-        noticias.append({"url": href, "titulo": titulo})
+                if not titulo or len(titulo) < 8:
+                    continue
+
+                url = urljoin(pagina, href)
+
+                if "ubisoft.com" not in url:
+                    continue
+
+                if "news" not in url.lower():
+                    continue
+
+                imagem = None
+                img = link.find("img")
+
+                if img:
+                    imagem = img.get("src") or img.get("data-src")
+
+                if imagem:
+                    imagem = urljoin(pagina, imagem)
+
+                noticia = {
+                    "titulo": titulo,
+                    "url": url,
+                    "imagem": imagem,
+                    "idioma": "pt" if "/pt-br/" in pagina else "en"
+                }
+
+                if not any(n["url"] == url for n in noticias):
+                    noticias.append(noticia)
+
+        except requests.RequestException as erro:
+            print(f"Erro ao consultar {pagina}: {erro}")
 
     return noticias
 
-def detalhes_noticia(url, titulo_lista):
-    resposta = requests.get(url, headers=HEADERS, timeout=30)
-    resposta.raise_for_status()
-    soup = BeautifulSoup(resposta.text, "html.parser")
 
-    def meta(nome):
-        tag = soup.find("meta", property=nome)
-        if not tag:
-            tag = soup.find("meta", attrs={"name": nome})
-        return tag.get("content", "").strip() if tag else ""
+def buscar_mensagens_publicadas():
+    url = f"{API}/channels/{CHANNEL_ID}/messages"
 
-    titulo = meta("og:title") or titulo_lista
-    descricao = meta("og:description") or meta("description")
-    imagem = meta("og:image")
-
-    if not titulo:
-        h1 = soup.find("h1")
-        titulo = h1.get_text(" ", strip=True) if h1 else "Notícia oficial Ubisoft"
-
-    return {
-        "title": titulo[:250],
-        "description": descricao[:1500],
-        "image": imagem,
-        "url": url
-    }
-
-def ja_publicada(url):
-    endpoint = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
     resposta = requests.get(
-        endpoint,
+        url,
         headers=DISCORD_HEADERS,
         params={"limit": 100},
-        timeout=30
+        timeout=20
     )
-    resposta.raise_for_status()
 
-    for mensagem in resposta.json():
+    if resposta.status_code != 200:
+        print("Erro ao consultar histórico:", resposta.status_code)
+        print(resposta.text[:500])
+        return None
+
+    mensagens = resposta.json()
+    urls = set()
+
+    for mensagem in mensagens:
         for embed in mensagem.get("embeds", []):
-            if embed.get("url") == url:
-                return True
-    return False
+            link = embed.get("url")
+            if link:
+                urls.add(link)
 
-def publicar(noticia):
-    endpoint = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
+    return urls
 
+
+def publicar_noticia(noticia):
     embed = {
-        "title": noticia["title"],
+        "title": noticia["titulo"][:256],
         "url": noticia["url"],
-        "description": noticia["description"] or "Confira a notícia oficial da Ubisoft.",
-        "color": 0xD6A84F,
-        "footer": {"text": "THE DIVISION 2 NEWS • Fonte oficial Ubisoft"}
+        "description": (
+            "Confira esta atualização oficial de "
+            "Tom Clancy's The Division 2 no site da Ubisoft."
+        ),
+        "color": 0xD6A52A,
+        "footer": {
+            "text": "THE DIVISION 2 NEWS • Fonte oficial: Ubisoft"
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-    if noticia["image"]:
-        embed["image"] = {"url": noticia["image"]}
+    if noticia.get("imagem"):
+        embed["image"] = {"url": noticia["imagem"]}
 
-    resposta = requests.post(
-        endpoint,
-        headers=DISCORD_HEADERS,
-        json={"embeds": [embed]},
-        timeout=30
-    )
-    resposta.raise_for_status()
-    print("Notícia publicada:", noticia["title"])
-
-
-def main():
-    print("Testando envio de mensagem no Discord...")
-
-    url = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
-
-    dados = {
-        "content": "🦉 **THE DIVISION 2 NEWS** está conectado! Teste de envio realizado com sucesso."
-    }
+    url = f"{API}/channels/{CHANNEL_ID}/messages"
 
     resposta = requests.post(
         url,
         headers=DISCORD_HEADERS,
-        json=dados,
+        json={"embeds": [embed]},
         timeout=20
     )
 
-    print("Código de resposta:", resposta.status_code)
-
     if resposta.status_code == 200:
-        print("SUCESSO! Mensagem enviada ao Discord.")
+        print("Notícia publicada:", noticia["titulo"])
+        return True
 
-    elif resposta.status_code == 403:
-        print("ERRO: o bot não tem permissão para enviar mensagens.")
-
-    else:
-        print("Resposta do Discord:", resposta.text[:500])
+    print("Erro ao publicar:", resposta.status_code)
+    print(resposta.text[:500])
+    return False
 
 
-if __name__ == "__main__":
-    main()
+def main():
+    if not TOKEN or not CHANNEL_ID:
+        print("ERRO: configure DISCORD_TOKEN e DISCORD_CHANNEL_ID.")
+        return
+
+    print("Buscando notícias oficiais da Ubisoft...")
+
+    publicadas = buscar_mensagens_publicadas()
+
+    if publicadas is None:
+        print("Não foi possível consultar o canal. Publicação cancelada.")
+        return
+
+    noticias = buscar_noticias()
+
+    if not noticias:
+        print("Nenhuma notícia encontrada nas páginas consultadas.")
+        return
+
+    novas = [
+        noticia for noticia in noticias
+        if noticia["url"] not in publicadas
+    ]
+
+    if not novas:
+        print("Nenhuma notícia nova encontrada.")
+        return
+
+    # Publica no máximo 3 notícias por execução.
+    for noticia in novas[:3]:
+        publicar_noticia(noticia)
 
 
 if __name__ == "__main__":
