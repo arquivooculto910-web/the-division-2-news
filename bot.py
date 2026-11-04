@@ -126,6 +126,7 @@ def main():
             noticias.append(noticia)
 
     print("Notícias encontradas:", len(noticias))
+    print("VERSÃO NOVA DO BOT EXECUTADA")
 
     # Processa primeiro as publicações mais recentes da página.
     for item in noticias[:15]:
