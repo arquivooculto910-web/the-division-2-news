@@ -1,5 +1,5 @@
 
-name: Testar noticias Ubisoft
+name: THE DIVISION 2 NEWS
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
     - cron: "*/10 * * * *"
 
 jobs:
-  testar:
+  publicar:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,5 +22,8 @@ jobs:
       - name: Instalar bibliotecas
         run: pip install -r requirements.txt
 
-      - name: Consultar noticias oficiais
+      - name: Consultar e publicar noticias
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
         run: python bot.py
